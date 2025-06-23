@@ -19,6 +19,15 @@ book:
           department: 'Centre for Psychiatry Research, Department of Clinical Neuroscience'
       orcid: '0000-0003-1669-592X'
       degrees: PhD
+    - name: 'Anna Finnes'
+      affiliations:
+        - name: 'Karolinska Institutet'
+          url: 'https://ki.se/en/people/anna-finnes'
+          department: 'Mental health and social integration, Department of Clinical Neuroscience'
+        - name: 'Region Stockholm'
+      orcid: '0000-0002-5615-4266'
+      degrees: PhD
+
   date: last-modified
   date-format: iso
   doi: '10.5281/zenodo.15721121'
