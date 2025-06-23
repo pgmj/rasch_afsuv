@@ -21,7 +21,7 @@ book:
       degrees: PhD
   date: last-modified
   date-format: iso
-  doi: ''
+  doi: '10.5281/zenodo.15721121'
 
   chapters:
   - index.qmd
