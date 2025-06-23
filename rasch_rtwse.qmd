@@ -1,0 +1,954 @@
+---
+title: "Return to Work Self-Efficacy (RTWSE)"
+title-block-banner: "#870052"
+title-block-banner-color: "#FFFFFF"
+date: last-modified
+date-format: iso
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(easyRasch)
+library(haven)
+
+### some commands exist in multiple packages, here we define preferred ones that are frequently used
+select <- dplyr::select
+count <- dplyr::count
+recode <- car::recode
+rename <- dplyr::rename
+
+d.all <- read_spss("data/SUVRTW_LONG 240528 TOTAL.sav") 
+d.wide <- read_spss("/Volumes/magnuspjo/RTWSE/Intensiv/SUVRTW_Wide_complete_dataset 240416 TOTAL.sav") %>% 
+  select(starts_with("SERTW_7"),PID)
+
+d.long <- d.wide %>% 
+  pivot_longer(cols = starts_with("SERTW_7"),
+               names_to = "item",
+               values_to = "RTWSE_7"
+               ) %>% 
+  add_column(time = rep(0:9, times = 169)) %>% 
+  select(!item)
+
+d <- d.all %>% 
+  select(starts_with("RTW"),time,PID) %>% 
+  mutate(across(starts_with("RTW"), ~ as.numeric(.x)))
+
+d <- left_join(d,d.long, by = c("PID","time"))
+
+d2 <- d 
+
+# d.wide <- read_spss("/Volumes/magnuspjo/RTWSE/Intensiv/SUVRTW_Wide_complete_dataset 240416 TOTAL.sav") %>% 
+#   select(starts_with("BI_")) %>% 
+#   select(!BI_2_Corr)
+# labels_bi <- lapply(d.wide, function(x) attributes(x)$label)
+# 
+# background_labels <- data.frame(
+#   itemnr = names(labels_bi),
+#   item = unlist(labels_bi)
+# )
+# 
+# kbl_rise(background_labels)
+
+# demogr_vars <- c("BI_1_PRE","BI_2_PRE","BI_3_PRE","BI_7_PRE","age_PRE")
+# demogr_desc <- c("Kön","Högsta utbildningsnivå","Civiltillstånd","Hur många timmar jobbar du en genomsnittlig vecka när du inte är sjukskriven","Ålder")
+# 
+# data.frame(itemnr = demogr_vars,
+#            item = demogr_desc) %>%
+#   write_csv("data/demographic_vars.csv")
+
+dvars <- read_csv("data/demographic_vars.csv")
+
+dvars_df <- read_spss("/Volumes/magnuspjo/RTWSE/Intensiv/SUVRTW_Wide_complete_dataset 240416 TOTAL.sav") %>% 
+  select(BI_1_PRE,BI_2_PRE,age_PRE,PID) %>% 
+  rename(gender = BI_1_PRE,
+         edu_level = BI_2_PRE,
+         age = age_PRE)
+  
+
+# subset and remove DIF variable(s) from response data
+dif.time <- d$time
+d$time <- NULL
+d$PID <- NULL
+
+#itemlabels <- read_csv("data/spss_labels.csv") %>% 
+#  filter(str_detect(itemnr,"RTW"))
+
+itemlabels <- read_csv("data/itemlabels_rtwse.csv")
+
+vars = paste0("rtwse_",c(1,3,4,5,7,8,10))
+
+names(d) <- vars
+# for testing wai items
+final_items <- c("rtwse_1", "rtwse_4", "rtwse_5", "rtwse_7", "rtwse_8")
+
+d3 <- d2 %>%
+  add_column(wai_1 = d.all$WAI3_1,
+             wai_2 = d.all$WAI3_2,
+             wai_3 = d.all$WAI3_3) %>%
+  filter(time == 7) %>%
+  select(!c(PID,time)) %>%
+  set_names(vars,"wai_1","wai_2","wai_3") %>%
+  na.omit() %>%
+  select(all_of(final_items),wai_1,wai_2,wai_3) %>%
+  mutate(across(!wai_1, ~ .x - 1))
+
+#RItileplot(d3)
+# d2 %>% 
+#   select(!PID) %>% 
+#   write_csv("data/RTWSE_data.csv")
+```
+
+## Background 
+
+We have longitudinal data from 10 measurements.
+
+We'll select the datapoint with best targeting for our psychometric analysis.
+
+```{r}
+o_plots <- d2 %>% 
+  select(!PID) %>% 
+  na.omit() %>% 
+  mutate(across(!time, ~ .x - 1)) %>% 
+  split(.$time) %>% 
+  map(~ RItargeting(.x %>% select(!time),xlim = c(-3,3)) + plot_annotation(title = paste0("Timepoint ",.x$time)))
+
+
+```
+
+```{r}
+#| layout-ncol: 2
+o_plots[[1]]
+o_plots[[2]]
+o_plots[[3]] 
+o_plots[[4]]
+o_plots[[5]]
+o_plots[[6]] 
+o_plots[[7]]
+o_plots[[8]]
+o_plots[[9]]
+o_plots[[10]]
+
+
+```
+
+Timepoint 7 looks best in terms of targeting. Sample size is 153 complete cases.
+
+We have 7 * 4 = 28 item thresholds to estimate. 153/28 ~= 5.5 per threshold, which is low but doable when targeting is good.
+
+```{r}
+d <- d2 %>% 
+  filter(time == 7) %>% 
+  select(!c(PID,time)) %>% 
+  set_names(vars)
+```
+
+
+### Descriptives
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Missing/item
+```{r}
+RImissing(d)
+#RImissingP(d, n = 20)
+# n persons w missing
+n_complete <- d %>% 
+  na.omit() %>% 
+  nrow()
+```
+`r n_complete/nrow(d)` of respondents have complete data (n = `r n_complete`). 
+We will remove those with missing data.
+:::
+
+No missing item responses, only complete missingness for 16 respondents (~9%) for this timepoint.
+
+```{r}
+d <- d2 %>% 
+  filter(time == 7) %>% 
+  na.omit()
+
+d <- left_join(d,dvars_df, by = "PID")
+
+# subset and remove DIF variable(s)
+dif <- d %>% 
+  select(gender,edu_level,age)
+
+d <- d %>% 
+  select(!c(gender,edu_level,age,PID,time))
+
+names(d) <- vars
+```
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+:::
+
+Looks good in terms of distributions, only one cell has less than 10 responses.
+
+We need to recode to make 0 the lowest response category.
+
+```{r}
+d <- d %>% 
+  mutate(across(everything(), ~ .x - 1))
+RItileplot(d)
+```
+
+
+## Rasch analysis 1
+
+The eRm package, which uses Conditional Maximum Likelihood (CML)
+estimation, will be used primarily. For this analysis, the Partial
+Credit Model will be used.
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit1 <- RIgetfit(d,100,8)
+RIitemfit(d,simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor1 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor1$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response category probabilities
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d, bins = 30)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### Person fit
+
+```{r}
+RIpfit(d)
+```
+:::
+
+Items 7 and 10 have a residual correlation above the threshold value, indicating local dependence.
+
+Item threshold 2 and 3 are either disordered (items 1,3,8,10) or very closely located. Review the targeting or item hierarchy plots to see the thresholds numbered. The 
+
+- Håller till stor del inte med (1) (a bit strange wording in Swedish)
+- Håller delvis inte med (2)
+
+It seems these two adjacent categories are not sufficiently differentiated/distinct from each other.
+
+Item 3 ("I will be able to set my personal boundaries at work") is high in item fit and deviates in the loadings plot. It seems to not belong to the dimension.
+
+We'll start with removing item 3.
+
+
+```{r}
+d_backup <- d
+
+#d <- d %>% 
+#  mutate(across(everything(), ~ car::recode(.x,"2=1;3=2;4=3;5=4;6=5")))
+
+d$rtwse_3 <- NULL
+#RItileplot(d)
+```
+
+## Rasch analysis 2
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 100, 8)
+RIitemfit(d, simfit2)
+#RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d, bins = 50)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+iarm::score_groups(as.data.frame(d)) %>% 
+  as.data.frame(nm = "score_group") %>% 
+  dplyr::count(score_group)
+
+dif_plots <- d %>% 
+  add_column(dif = iarm::score_groups(.)) %>% 
+  split(.$dif) %>% # split the data using the DIF variable
+  map(~ RItileplot(.x %>% dplyr::select(!dif)) + labs(title = .x$dif))
+dif_plots[[1]] + dif_plots[[2]]
+```
+Subgroups are too small for this comparison.
+:::
+
+Item 10 ("I can motivate myself to perform my job") is high in item fit (underfit). It works well in terms of item-restscore, but item fit has better properties in detecting misfit in small samples. Item 10 deviates in the loadings plot.
+
+Looking at the item wording, item 10 also deviates from other items.
+
+
+## Rasch analysis 3
+
+```{r}
+d <- d_backup
+d$rtwse_3 <- NULL
+d$rtwse_10 <- NULL
+```
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit3 <- RIgetfit(d, 100, 8)
+RIitemfit(d, simfit3)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d, bins = 50)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+
+```{r}
+RIpfit(d)
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = TRUE)
+```
+:::
+
+No misfit. While we still have small distances between item threshold locations t2 and t3, none are disordered.
+
+
+
+## DIF time
+
+Let's see if we have sufficient data to run DIF for time.
+```{r}
+final_items <- c("rtwse_1", "rtwse_4", "rtwse_5", "rtwse_7", "rtwse_8")
+
+```
+
+```{r}
+o_plots <- d2 %>% 
+  select(!PID) %>% 
+  na.omit() %>% 
+  split(.$time) %>% 
+  map(~ RItileplot(.x %>% select(!time)) + plot_annotation(title = paste0("Timepoint ",.x$time)))
+
+```
+
+```{r}
+#| layout-ncol: 2
+o_plots[[1]]
+o_plots[[2]]
+o_plots[[3]] # no plot
+o_plots[[4]]
+o_plots[[5]]
+o_plots[[6]] # no plot
+o_plots[[7]]
+o_plots[[8]]
+o_plots[[9]]
+o_plots[[10]]
+
+```
+
+There are very few responses in upper categories for the earlier time points. The decision tree based model will be helpful to group time points together.
+
+```{r}
+d_time <- d2 %>% 
+  #select(!PID) %>%
+  relocate(time, .after = "RTWSE_7") %>% 
+  relocate(PID, .after = "time")
+
+names(d_time) <- c(vars,"time","PID")  
+
+d_time <- d_time %>% 
+  select(all_of(final_items),time,PID) %>% 
+  na.omit()
+
+dif.time <- d_time$time
+d_time$time <- NULL
+
+pid <- d_time$PID
+d_time$PID <- NULL
+
+d_time <- d_time %>% 
+  mutate(across(everything(), ~ .x - 1))
+```
+
+
+```{r}
+RIdifTable(d_time,dif.time)
+RIdifFigTime(d_time,dif.time) +
+  scale_y_continuous(limits = c(-4,4)) +
+  theme_minimal()
+```
+
+The decision tree process split the time variable in two, where the first two time points differ from the remaining 8. But looking at the magnitude of DIF, it does not seem large. We'll run an additional comparison using partial gamma.
+
+```{r}
+dif.time.cat <- d_time %>% 
+  add_column(time = dif.time) %>% 
+  mutate(time_cat = ifelse(dif.time < 2, 0, 1)) %>% 
+  pull(time_cat)
+
+partgam_DIF(as.data.frame(d_time),dif.time.cat)
+```
+
+Partial gamma is small (<0.21) and not statistically significant.
+
+## Item parameters
+
+```{r}
+RIitemparams(d)
+
+RIitemparams(d, output = "file", filename = "RTWSE_itemparams.csv")
+RIscoreSE(d)
+RIscoreSE(d, output = "figure")
+```
+
+## Latent scores
+
+```{r}
+items <- RIitemparams(d,output = "dataframe") %>% 
+  select(!Location) %>% 
+  as.matrix()
+
+items <- read_csv("RTWSE_itemparams.csv") %>% 
+  as.matrix()
+
+thetas <- RIestThetasCATr(d_time,itemParams = items, cpu = 8,theta_range = c(-8,8))
+personSEM <- map_vec(thetas, ~ semTheta(thEst = .x,
+                                                      it = items,
+                                                      model = "PCM",
+                                                      method = "WL",
+                                                      range = c(-8, 8)
+                                                      ))
+summary(thetas)
+summary(personSEM)
+```
+
+
+```{r}
+data.frame(PID = pid,
+           time = dif.time,
+           RTWSE_score = thetas,
+           RTWSE_sem = personSEM) %>% 
+  write_csv("RTWSE_score.csv")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## WAI items added
+
+```{r}
+d <- d3 %>% 
+  select(all_of(final_items),wai_1,wai_2,wai_3)
+```
+
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit3 <- RIgetfit(d, 100, 8)
+RIitemfit(d, simfit3)
+```
+### Item-restscore
+```{r}
+item_restscore(PCM(d))
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor3 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor3$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d, bins = 50)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups DIF
+```{r}
+item_obsexp(PCM(d))
+```
+:::
+
+No residual correlations. WAI_2 deviates strongly in loading on 1st contrast factor and high item fit. The item content is about physical demands of work, which makes sense that it does not fit with the other items.
+
+- "Hur bedömer du din nuvarande arbetsförmåga i relation till de fysiska krav ditt arbete ställer?"
+
+```{r}
+d$wai_2 <- NULL
+```
+
+## WAI items added 2
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit3 <- RIgetfit(d, 100, 8)
+RIitemfit(d, simfit3)
+```
+### Item-restscore
+```{r}
+item_restscore(PCM(d))
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d, bins = 50)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups DIF
+```{r}
+item_obsexp(PCM(d))
+```
+:::
+
+Now WAI_1 deviates similarly to WAI_2 in the previous item set analysis. Here the content analysis is less clear.
+
+- "Vi antar att din arbetsförmåga, då den var som bäst, värderas med 10 poäng. Vilket poängtal skulle du ge din nuvarande arbetsförmåga?"
+
+```{r}
+d$wai_1 <- NULL
+```
+
+## WAI items added 3
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit3 <- RIgetfit(d, 100, 8)
+RIitemfit(d, simfit3)
+```
+### Item-restscore
+```{r}
+item_restscore(PCM(d))
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor3 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor3$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d, bins = 50)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups DIF
+```{r}
+item_obsexp(PCM(d))
+```
+### DIF gender
+```{r}
+partgam_DIF(as.data.frame(d),dif$gender)
+```
+### DIF education level
+```{r}
+partgam_DIF(as.data.frame(d),dif$edu_level)
+```
+### DIF age
+```{r}
+RIdifTable(d,round(dif$age,0))
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = TRUE)
+```
+:::
+
+Everything looks good. 
+
+
+We need to check the DIF over time for item WAI_3
+
+### DIF time RTWSE+WAI_3
+
+```{r}
+d_time <- d2 %>% 
+  #select(!PID) %>%
+  relocate(time, .after = "RTWSE_7") %>% 
+  relocate(PID, .after = "time")
+
+names(d_time) <- c(vars,"time","PID")  
+
+d_time <- d_time %>% 
+  select(all_of(final_items),time,PID) %>% 
+  add_column(WAI_3 = d.all$WAI3_3) %>% 
+  na.omit()
+
+dif.time <- d_time$time
+d_time$time <- NULL
+
+pid <- d_time$PID
+d_time$PID <- NULL
+
+RItileplot(d_time)
+
+d_time <- d_time %>% 
+  mutate(across(everything(), ~ .x - 1))
+```
+
+```{r}
+plots <- d_time %>% 
+  add_column(time = dif.time) %>% 
+  split(.$time) %>% 
+  map(~ RItargeting(.x %>% select(!time),xlim = c(-3,3)) + plot_annotation(title = paste0("Timepoint ",.x$time)))
+```
+
+```{r}
+#| layout-ncol: 2
+plots[[1]]
+plots[[2]] # no plot
+plots[[3]] # no plot
+plots[[4]]
+plots[[5]] # no plot
+plots[[6]] 
+plots[[7]]
+plots[[8]]
+plots[[9]]
+plots[[10]]
+
+```
+
+No plot for time 1 (plot 2), 2 and 4. Further investigation is needed.
+
+```{r}
+dif_plots <- d_time %>% 
+  add_column(dif = dif.time) %>% 
+  split(.$dif) %>% # split the data using the DIF variable
+  map(~ RItileplot(.x %>% dplyr::select(!dif)) + labs(title = .x$dif))
+dif_plots[[2]] + dif_plots[[3]] + dif_plots[[5]]
+```
+
+Only 1 response in the highest item category for all three time points.
+
+```{r}
+erm_out <- d_time %>%
+  add_column(time = dif.time) %>%
+  filter(time == 1) %>%
+  select(!time) %>%
+  PCM()
+
+item.locations <- as.data.frame(thresholds(erm_out)[[3]][[1]][,-1] - mean(thresholds(erm_out)[[3]][[1]][, -1], na.rm = T))
+
+erm_out <- d_time %>%
+  add_column(time = dif.time) %>%
+  filter(time == 2) %>%
+  select(!time) %>%
+  PCM()
+
+item.locations2 <- as.data.frame(thresholds(erm_out)[[3]][[1]][,-1] - mean(thresholds(erm_out)[[3]][[1]][, -1], na.rm = T))
+
+erm_out <- d_time %>%
+  add_column(time = dif.time) %>%
+  filter(time == 4) %>%
+  select(!time) %>%
+  PCM()
+
+item.locations4 <- as.data.frame(thresholds(erm_out)[[3]][[1]][,-1] - mean(thresholds(erm_out)[[3]][[1]][, -1], na.rm = T))
+
+item.locations
+item.locations2
+item.locations4
+```
+
+Highest threshold for wai3 is very high when only one respondent used the category.
+
+```{r}
+mirt_out <- d_time %>%
+  add_column(time = dif.time) %>%
+  filter(time == 1) %>%
+  select(!time) %>%
+  mirt(model=1, itemtype='Rasch', verbose = FALSE)
+
+mirt_params <- coef(mirt_out, simplify = TRUE, IRTpars = TRUE)$items %>%
+    as.data.frame() %>%
+    select(!a)
+
+mirt_out <- d_time %>%
+  add_column(time = dif.time) %>%
+  filter(time == 2) %>%
+  select(!time) %>%
+  mirt(model=1, itemtype='Rasch', verbose = FALSE)
+
+mirt_params2 <- coef(mirt_out, simplify = TRUE, IRTpars = TRUE)$items %>%
+    as.data.frame() %>%
+    select(!a)
+
+mirt_out <- d_time %>%
+  add_column(time = dif.time) %>%
+  filter(time == 4) %>%
+  select(!time) %>%
+  mirt(model=1, itemtype='Rasch', verbose = FALSE)
+
+mirt_params4 <- coef(mirt_out, simplify = TRUE, IRTpars = TRUE)$items %>%
+    as.data.frame() %>%
+    select(!a)
+
+mirt_params
+mirt_params2
+mirt_params4
+```
+
+mirt produces a less extreme estimate than eRm when we only have one respondent in a category, although it does look a bit extreme for these as well.
+
+```{r}
+RItargeting(d_time)
+RItargeting(d)
+```
+
+Not a big difference in threshold locations between our well-targeted sample used for the main psychometric analysis and the stacked dataset with all measurement points.
+
+```{r}
+RIdifTable(d_time,dif.time)
+RIdifFigTime(d_time,dif.time) +
+  scale_y_continuous(limits = c(-4,4)) +
+  theme_minimal()
+
+partgam_DIF(as.data.frame(d_time),dif.time)
+```
+
+As expected, we get an artificial difference due to the issue described above, which also is likely to induce artificial DIF in other items. But even including this aberration, the partial gamma indicates relative stability over time.
+
+## Item parameters
+
+```{r}
+RIitemparams(d)
+
+RIitemparams(d, output = "file", filename = "RTWSE_wai3_itemparams.csv")
+RIscoreSE(d)
+RIscoreSE(d, output = "figure")
+```
+
+## Latent scores
+
+```{r}
+items <- RIitemparams(d,output = "dataframe") %>% 
+  select(!Location) %>% 
+  as.matrix()
+thetas <- RIestThetasCATr(d_time,itemParams = items, cpu = 8, theta_range = c(-8,8))
+summary(thetas)
+hist(thetas)
+```
+
+
+```{r}
+data.frame(PID = pid,
+           time = dif.time,
+           RTWSE_wai_score = thetas) %>% 
+  write_csv("RTWSE_wai_score.csv")
+
+```

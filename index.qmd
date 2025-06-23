@@ -1,0 +1,14 @@
+---
+title-block-banner: "#870052"
+title-block-banner-color: "#FFFFFF"
+format:
+  html:
+    toc: false
+---
+
+## Background {.unnumbered}
+
+These psychometric analyses were conducted in the SUV project, which collected longitudinal data for 165 individuals on sick-leave during one year. Analyses were made both due to an interest of investigating the psychometric properties of the questionnaires used and also in order to estimate interval level measurement values for each questionnaire.
+
+The methodology used in based on Rasch Measurement Theory. Here is a text describing the methodology, the various subtests and their interpretation: <https://pgmj.github.io/raschrvignette/RaschRvign.html>
+

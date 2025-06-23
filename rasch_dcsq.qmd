@@ -1,0 +1,825 @@
+---
+title: "DCSQ"
+subtitle: "Demand, Control & Social Support"
+title-block-banner: "#870052"
+title-block-banner-color: "#FFFFFF"
+date: last-modified
+date-format: iso
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(easyRasch)
+library(haven)
+
+### some commands exist in multiple packages, here we define preferred ones that are frequently used
+select <- dplyr::select
+count <- dplyr::count
+recode <- car::recode
+rename <- dplyr::rename
+
+#d.all <- read_spss("data/SUVRTW_LONG 240528 TOTAL.sav") 
+# d.wide <- read_spss("/Volumes/magnuspjo/RTWSE/Intensiv/SUVRTW_Wide_complete_dataset 240416 TOTAL.sav") %>% 
+#   select(contains("DCSQ"),PID) %>% 
+#   select(!contains("sum"))
+
+library(readxl)
+dbass <- read_excel("/Volumes/magnuspjo/RTWSE/Intensiv/SUVintensivstudie_demografi etc data.xlsx") %>% 
+  clean_names() %>% 
+  rename(PID = participant_id) %>% 
+  select(PID,starts_with("dcsq"))
+
+dbass %>% 
+  select(!PID) %>% 
+  na.omit() %>% 
+  RItileplot()
+
+d <- dbass %>% 
+  na.omit()
+
+pid <- d$PID
+d$PID <- NULL
+
+names(d) <- paste0("dcsq_",1:17)
+
+d2 <- d 
+
+itemlabels <- data.frame(itemnr = names(d),
+                         item = c("Det är en lugn och behaglig arbetsmiljö.", "Det är god sammanhållning.", "Mina arbetskamrater ställer upp för mig.", "Man har förståelse för varandra", "Jag kommer bra överens med arbetskamraterna", "Jag trivs med mina arbetskamrater", "Kräver ditt arbete att du jobbar fort?", "Kräver ditt arbete att du arbetar mycket hårt?", "Kräver ditt arbete en för stor arbetsinsats?", "Har du tillräckligt med tid för att hinna med arbetsuppgifterna?", "Förekommer det motstridiga krav i ditt arbete?", "Får du lära dig nya saker i ditt arbete?", "Kräver ditt arbete skicklighet?", "Kräver ditt arbete påhittighet?", "Innebär ditt arbete att man gör samma sak om och om igen?", "Har du frihet att bestämma hur ditt arbete ska utföras?", "Har du frihet att bestämma vad som skall utföras i ditt arbete?")
+)
+```
+
+## Background 
+
+165 complete observations, and 3 subscales.
+
+
+### Descriptives
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Columns
+```{r}
+RIitemcols(d)
+```
+:::
+
+
+## Social support
+
+```{r}
+d <- d2 %>% 
+  select(dcsq_1:dcsq_6)
+```
+
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Columns
+```{r}
+RIitemcols(d)
+```
+#### CICC
+```{r}
+RIciccPlot(d)
+```
+:::
+
+Looks decent in terms of distributions, only one cell has less than 10 responses (6).
+
+No need to reverse score any items, but item 1 looks distinctly underfit.
+
+
+## Rasch analysis 1
+
+The eRm package, which uses Conditional Maximum Likelihood (CML)
+estimation, will be used primarily. For this analysis, the Partial
+Credit Model will be used.
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit1 <- RIgetfit(d,100,8)
+RIitemfit(d,simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+:::
+
+Item 1 is clearly deviating with high item fit and loadings on first residual contrast factor. We'll remove it.
+
+```{r}
+d$dcsq_1 <- NULL
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit1 <- RIgetfit(d,100,8)
+RIitemfit(d,simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+#simpca <- RIbootPCA(d, iterations = 100, cpu = 8)
+#simpca$max
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response category probabilities
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-8,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+```
+:::
+
+Item fit is good and response categories are ordered. Our main issue is residual correlations. The strongest is between items 5 and 6
+
+- 5: "Jag kommer bra överens med arbetskamraterna"
+- 6: "Jag trivs med mina arbetskamrater."
+
+And then, to a lesser degree, items 3 and 4:
+
+- 3: "Mina arbetskamrater ställer upp för mig"
+- 4: "Man har förståelse för varandra"
+
+Item fit is similar for 5 and 6. Either could be removed. 
+
+```{r}
+d %>% 
+  select(!dcsq_5) %>% 
+  RItif(samplePSI = T) +
+  labs(title = "Without item 5")
+
+d %>% 
+  select(!dcsq_6) %>% 
+  RItif(samplePSI = T)+
+  labs(title = "Without item 6")
+
+```
+
+Irrelevant difference in reliability in terms of PSI, but the TIF curve is better when removing item 5.
+
+
+## Rasch analysis 2
+
+```{r}
+d$dcsq_5 <- NULL
+```
+
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 500, 8)
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- easyRasch::RIgetResidCor(d, 1000, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+
+RIpartgamLD(d)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+clr_tests(d, model = "PCM")
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = T)
+```
+:::
+
+Items 3 and 4 still have a residual correlation.
+
+-   dcsq_3                         Mina arbetskamrater ställer upp för mig.
+-   dcsq_4                                Man har förståelse för varandra
+
+```{r}
+d %>% 
+  select(!dcsq_3) %>% 
+  RItif(samplePSI = T) +
+  labs(title = "Without item 3")
+d %>% 
+  select(!dcsq_4) %>% 
+  RItif(samplePSI = T)+
+  labs(title = "Without item 4")
+
+```
+
+We'll remove item 4 since it results in PSI 0.77 over 0.75 when removing item 3.
+
+```{r}
+d$dcsq_4 <- NULL
+```
+
+```{r}
+RItargeting(d)
+```
+
+
+Items 1, 4 and 5 were removed, leaving 2, 3 and 6
+
+## Item parameters
+
+```{r}
+RIitemparams(d)
+
+RIitemparams(d, output = "file", filename = "DCSQ_S3_itemparams.csv")
+RIscoreSE(d)
+RIscoreSE(d, output = "figure")
+```
+
+## Latent scores
+
+```{r}
+items <- RIitemparams(d, output = "dataframe") %>% 
+  select(!Location) %>% 
+  as.matrix()
+thetas <- RIestThetasCATr(d, itemParams = items, theta_range = c(-8,8))
+summary(thetas)
+hist(thetas)
+```
+
+```{r}
+data.frame(PID = pid,
+           DCSQ_S3_score = thetas,
+           time = 0) %>% 
+  write_csv("DCSQ_S3_score.csv")
+
+```
+
+## Demands
+
+```{r}
+d <- d2 %>% 
+  select(dcsq_7:dcsq_11)
+```
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Expected Value Curves
+```{r}
+RIciccPlot(d)
+```
+:::
+
+Item 10 needs reverse scoring. Item 7 has only 1 response in the lowest category, which means we need to merge it with the second lowest category to get reasonably accurate estimates.
+
+```{r}
+d %>% 
+  mutate(dcsq_10 = car::recode(dcsq_10,"3=0;2=1;1=2;0=3"),
+         dcsq_7 = car::recode(dcsq_7,"3=2;2=1;1=0")) %>% 
+  RItileplot()
+```
+
+
+```{r}
+d <- d %>% 
+  mutate(dcsq_10 = car::recode(dcsq_10,"3=0;2=1;1=2;0=3"),
+         dcsq_7 = car::recode(dcsq_7,"3=2;2=1;1=0")) 
+```
+
+
+## Analysis 1
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 500, 8)
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### CICC
+```{r}
+ICCplot(as.data.frame(d),
+        itemnumber = 3,
+        method = "cut")
+```
+
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+partgam_LD(as.data.frame(d))
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+clr_tests(d, model = "PCM")
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = T)
+```
+:::
+
+Item fit looks good. Item-restscore indicates problem with item 9 having a stronger than expected correlation with restscore. There is a residual correlation between items 9 and 10.
+
+- 9: Kräver ditt arbete en för stor arbetsinsats?
+- 10: Har du tillräckligt med tid för att hinna med arbetsuppgifterna?
+
+We remove item 9.
+
+## Analysis 2
+
+```{r}
+d$dcsq_9 <- NULL
+```
+
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 500, 8)
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+partgam_LD(as.data.frame(d))
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+clr_tests(d, model = "PCM")
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = T)
+```
+:::
+
+A minor residual correlation between items 7 and 8.
+
+-   dcsq_7                           Kräver ditt arbete att du jobbar fort?
+-   dcsq_8                   Kräver ditt arbete att du arbetar mycket hårt?
+
+
+Already the reliability in terms of PSI is below 0.7, and removing one item would decrease it further, so we'll just leave this analysis now.
+
+
+## Control
+
+```{r}
+d <- d2 %>% 
+  select(dcsq_12:dcsq_17)
+```
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Expected Value Curves
+```{r}
+RIciccPlot(d)
+```
+:::
+
+Item 15 needs reverse scoring. Item 13 needs merging of two lowest categories, and item 14 has only one response in the lowest category.
+
+```{r}
+d %>% 
+  mutate(dcsq_15 = car::recode(dcsq_15,"3=0;2=1;1=2;0=3"),
+         dcsq_13 = car::recode(dcsq_13,"3=2;2=1;1=0")
+         #across(c(dcsq_13,dcsq_14), ~ car::recode(.x,"3=2;2=1;1=0"))
+         ) %>% 
+  RItileplot()
+```
+
+
+```{r}
+d <- d %>% 
+  mutate(dcsq_15 = car::recode(dcsq_15,"3=0;2=1;1=2;0=3"),
+        dcsq_13 = car::recode(dcsq_13,"3=2;2=1;1=0")
+         #across(c(dcsq_13,dcsq_14), ~ car::recode(.x,"3=2;2=1;1=0"))
+         )
+```
+
+## Analysis 1
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 500, 8)
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+clr_tests(d, model = "PCM")
+```
+:::
+
+PCA of residuals has an eigenvalue above 2.0. Items 16 and 17 show a very large residual correlation.
+
+- 16. Har du frihet att bestämma hur ditt arbete ska utföras?
+- 17. Har du frihet att bestämma vad som skall utföras i ditt arbete?
+
+17 has better targeting. 16 will be removed.
+
+```{r}
+d$dcsq_16 <- NULL
+```
+
+## Analysis 2
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 500, 8)
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+
+partgam_LD(as.data.frame(d))
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+clr_tests(d, model = "PCM")
+```
+### Reliability
+```{r}
+RItif(d, cutoff = 2, samplePSI = TRUE)
+```
+:::
+
+Items 13 and 14 show a residual correlation slightly above the cutoff value. Everything else looks ok, except reliability, which is low.
+
+- 13  Kräver ditt arbete skicklighet?
+- 14  Kräver ditt arbete påhittighet?
+
+Partial gamma analysis of local dependence also highlights the residual correlation between items 13 and 14, and additionally finds item 17 and 13 to have a negative residual correlation of notable size. Thus it seems reasonable to remove item 13.
+
+```{r}
+d$dcsq_13 <- NULL
+```
+
+## Analysis 2
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit2 <- RIgetfit(d, 500, 8)
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor2 <- RIgetResidCor(d, 500, 8)
+RIresidcorr(d, cutoff = simcor2$p99)
+partgam_LD(as.data.frame(d))
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Targeting
+```{r}
+#| fig-height: 6
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 6
+RIitemHierarchy(d)
+```
+### Person fit
+```{r}
+RIpfit(d)
+```
+### Score groups
+```{r}
+item_obsexp(PCM(d))
+clr_tests(d, model = "PCM")
+```
+### Reliability
+```{r}
+RItif(d, cutoff = 2, samplePSI = TRUE)
+```
+:::
+
+Items work well together, but relibility is low on all parameters.
+
+
+## Session info
+
+```{r}
+sessionInfo()
+```
+

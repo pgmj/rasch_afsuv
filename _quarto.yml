@@ -1,0 +1,54 @@
+project:
+  type: book
+  output-dir: docs
+book:
+  title: "Return to work questionnaires"
+  subtitle: "Psychometric analyses using Rasch Measurement Theory"
+  repo-url: "https://github.com/pgmj/rasch_afsuv"
+  sidebar:
+    style: floating
+    search: true
+  author:
+    - name: 'Magnus Johansson'
+      affiliations:
+        - name: 'RISE Research Institutes of Sweden'
+          url: 'https://www.ri.se/en/person/magnus-p-johansson'
+          department: 'System Transition'
+        - name: 'Karolinska Institutet'
+          url: 'https://ki.se/en/people/magnus-johansson-3'
+          department: 'Centre for Psychiatry Research, Department of Clinical Neuroscience'
+      orcid: '0000-0003-1669-592X'
+      degrees: PhD
+  date: last-modified
+  date-format: iso
+  doi: ''
+
+  chapters:
+  - index.qmd
+  - rasch_rtwse.qmd
+  - rasch_smbq6.qmd
+  - rasch_pcs4.qmd
+  - rasch_wps.qmd
+  - rasch_gad7.qmd
+  - rasch_dcsq.qmd
+
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-tools: false
+    code-fold: true
+    code-link: true
+    number-sections: true
+    layout-align: left
+    page-layout: full
+    mainfont: 'Lato'
+    monofont: 'Roboto Mono'
+    linestretch: 1.6
+    theme:
+      - materia
+      - custom.scss
+    css: style.css
+    link-external-newwindow: true
+    fig-dpi: 96
+    license: CC BY

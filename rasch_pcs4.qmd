@@ -1,0 +1,294 @@
+---
+title: "PCS-4"
+title-block-banner: "#870052"
+title-block-banner-color: "#FFFFFF"
+date: last-modified
+date-format: iso
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(easyRasch)
+library(haven)
+
+### some commands exist in multiple packages, here we define preferred ones that are frequently used
+select <- dplyr::select
+count <- dplyr::count
+recode <- car::recode
+rename <- dplyr::rename
+
+d.all <- read_spss("data/SUVRTW_LONG 240528 TOTAL.sav") 
+
+d <- d.all %>% 
+  select(starts_with("PCS"),time)
+
+# subset and remove DIF variable(s)
+dif.time <- d$time
+d$time <- NULL
+
+itemlabels <- read_csv("data/spss_labels.csv") %>% 
+  filter(str_detect(itemnr,"PCS"))
+
+```
+
+## Background 
+
+Since these items have 7 response categories we will use a stacked dataset to make sure we have enough responses in each response category.
+
+### Descriptives
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Missing/item
+```{r}
+RImissing(d)
+# n persons w missing
+n_complete <- d %>% 
+  na.omit() %>% 
+  nrow()
+```
+`r n_complete/nrow(d)` of respondents have complete data (n = `r n_complete`). 
+We will remove those with missing data
+:::
+
+```{r}
+d <- d.all %>% 
+  select(starts_with("PCS"),time,PID) %>% 
+  na.omit()
+
+# subset and remove DIF variable(s)
+dif.time <- d$time
+d$time <- NULL
+
+# subset and remove ID variable
+PID <- d$PID
+d$PID <- NULL
+```
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Columns
+```{r}
+RIitemcols(d)
+```
+:::
+
+We need to recode to make 0 the lowest response category.
+
+```{r}
+d <- d %>% 
+  mutate(across(everything(), ~ .x - 1))
+RItileplot(d)
+```
+
+
+## Rasch analysis 1
+
+The eRm package, which uses Conditional Maximum Likelihood (CML)
+estimation, will be used primarily. For this analysis, the Partial
+Credit Model will be used.
+
+Since we have a large sample size (n > 1000), we'll add bootstrapped item-restscore as a method for assessing item fit (Johansson, 2025).
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Conditional item fit
+```{r}
+simfit1 <- RIgetfit(d, iterations = 400, cpu = 8) 
+
+RIitemfit(d, simfit1)
+RIgetfitPlot(simfit1, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### Item-restscore bootstrap
+```{r}
+RIbootRestscore(d, samplesize = 600, cpu = 8, iterations = 250)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,500,8)
+RIresidcorr(d, simcor$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response categories
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### DIF time
+```{r}
+RIdifTable(d, dif.time)
+RIdifFigTime(d, dif.time) + coord_cartesian(ylim = c(-4,4))
+partgam_DIF(as.data.frame(d),dif.time)
+```
+:::
+
+Response categories are surprisingly well-behaved, considering the lack of labels.
+
+DIF over time is not problematic.
+
+Item 2 has low fit and problematic residual correlations. This is not surprising considering its very general content regarding the latent construct.
+
+- PCS4_2 "Jag har förmågan att hantera min psykiska ohälsa nu"
+
+We'll remove item 2.
+
+```{r}
+d$PCS4_2 <- NULL
+```
+
+## Rasch analysis 2
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Conditional item fit
+```{r}
+simfit2 <- RIgetfit(d, iterations = 400, cpu = 8) 
+
+RIitemfit(d, simfit2)
+RIgetfitPlot(simfit2, d)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### Item-restscore bootstrap
+```{r}
+RIbootRestscore(d, samplesize = 600, cpu = 8, iterations = 250)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,500,8)
+RIresidcorr(d, simcor$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response categories
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### DIF time
+```{r}
+RIdifTable(d, dif.time)
+RIdifFigTime(d, dif.time) + coord_cartesian(ylim = c(-4,4))
+partgam_DIF(as.data.frame(d),dif.time)
+```
+#### Reliability
+
+```{r}
+RItif(d, samplePSI = TRUE)
+```
+:::
+
+Relatively small distances between thresholds 2 and 3.
+
+Item 4 is overdiscriminating slighly (low fit and high observed value in item-restscore). Bootstrapped item-restscore indicates low levels of issues as well. No problematic residual correlations. PSI is 0.83 with item 4 included.
+
+- PCS4_4 "Jag känner att jag kan ta mig an de svårigheter det innebär att hantera min psykiska ohälsa"
+
+
+## Item parameters
+
+```{r}
+RIitemparams(d, output = "file", filename = "PCS3_params.csv")
+RIscoreSE(d)
+```
+
+## Latent score
+
+```{r}
+items <- RIitemparams(d,output = "dataframe") %>% 
+  select(!Location) %>% 
+  as.matrix()
+
+scores <- RIestThetasCATr(d, items, theta_range = c(-8,8))
+hist(scores)
+summary(scores)
+
+data.frame(PID = PID,
+           time = dif.time,
+           PCS_score = scores) %>% 
+  write_csv("PCS3_score.csv")
+
+```
+

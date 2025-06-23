@@ -1,0 +1,441 @@
+---
+title: "GAD-7"
+title-block-banner: "#870052"
+title-block-banner-color: "#FFFFFF"
+date: last-modified
+date-format: iso
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(easyRasch)
+library(haven)
+
+source("ki.R")
+theme_set(theme_ki())
+
+### some commands exist in multiple packages, here we define preferred ones that are frequently used
+select <- dplyr::select
+count <- dplyr::count
+recode <- car::recode
+rename <- dplyr::rename
+
+d.all <- read_spss("data/SUVRTW_LONG 240528 TOTAL.sav") 
+
+d <- d.all %>% 
+  select(starts_with("GAD7"),time) %>% 
+  na.omit()
+
+df <- d.all %>% 
+  select(starts_with("GAD7"),time,PID) %>% 
+  na.omit()
+
+# subset and remove DIF variable(s)
+dif.time <- d$time
+d$time <- NULL
+
+itemlabels <- read_csv("data/spss_labels.csv") %>% 
+  filter(str_detect(itemnr,"GAD"))
+
+```
+
+## Background 
+
+We have longitudinal data from 10 measurements.
+
+We'll select the datapoint with best targeting for our psychometric analysis.
+
+```{r}
+plots <- d %>% 
+  add_column(time = dif.time) %>% 
+  na.omit() %>% 
+  split(.$time) %>% 
+  map(~ RItargeting(.x %>% select(!time)) + plot_annotation(title = paste0("Timepoint ",.x$time)))
+
+```
+
+```{r}
+#| layout-ncol: 2
+plots[[1]]
+plots[[2]]
+plots[[3]]
+plots[[4]]
+plots[[5]]
+plots[[6]]
+plots[[7]]
+plots[[8]]
+plots[[9]]
+plots[[10]]
+```
+
+Looks like timepoint 2 is best targeted, and has a sample size of 163 complete responses.
+
+```{r}
+d <- d %>% 
+  add_column(time = dif.time) %>% 
+  filter(time == 2) %>% 
+  na.omit() %>% 
+  select(!time)
+```
+
+
+### Descriptives
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+#### Barplots
+```{r}
+RIitemcols(d)
+```
+:::
+
+
+## Rasch analysis 1
+
+The eRm package, which uses Conditional Maximum Likelihood (CML)
+estimation, will be used primarily. For this analysis, the Partial
+Credit Model will be used.
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Conditional item fit
+```{r}
+simfit1 <- RIgetfit(d, iterations = 100, cpu = 8) 
+RIitemfit(d, simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor1 <- RIgetResidCor(d, iterations = 500, cpu = 8)
+RIresidcorr(d, cutoff = simcor1$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response categories
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+# for fewer items or a more magnified figure, use:
+#RIitemCats(df)
+```
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### Score groups
+```{r}
+iarm::score_groups(as.data.frame(d)) %>% 
+  as.data.frame(nm = "score_group") %>% 
+  dplyr::count(score_group)
+
+dif_plots <- d %>% 
+  add_column(dif = iarm::score_groups(.)) %>% 
+  split(.$dif) %>% # split the data using the DIF variable
+  map(~ RItileplot(.x %>% dplyr::select(!dif)) + labs(title = .x$dif))
+dif_plots[[1]] + dif_plots[[2]]
+```
+:::
+
+Item 1 has residual correlations with item 2 and 4, while 2 and 3 are also locally dependent. Items 1-3 are all overfit, whileiItems 5-7 are underfit (high item infit, particularly item 5 and to a lesser degree 7). This indicates two dimensions in data. The loadings plot does not show this as clearly, though, with item 5 being the only item deviating strongly.
+
+All items have issues with the second highest response category having very small distance from the adjancent item category threshold locations.
+
+The sample is too small to create score groups for DIF analysis based on low/high scores.
+
+## Rasch analysis 2
+
+While two dimensions seems likely, let's see if we can find a working set of unidimensional items based on all 7. First, we remove item 5, leaving other issues for later.
+
+```{r}
+d.backup <- d
+
+d$GAD7_5 <- NULL
+```
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Conditional item fit
+```{r}
+simfit1 <- RIgetfit(d, iterations = 100, cpu = 8) 
+
+RIitemfit(d, simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor1 <- RIgetResidCor(d, iterations = 500, cpu = 8)
+RIresidcorr(d, cutoff = simcor1$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response categories
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+:::
+
+Only items 1 and 2 have a residual correlation now. The pattern in underfit and overfit items is more clearly seen in the loadings/location plot, with items 6 and 7 deviating. This confirms the two-dimensional structure, and we'll move to look at items 1-4 and 4-7 separately.
+
+
+
+## Two separate dimensions
+
+The initial analysis with all 7 items indicated that items 1-3 have low item fit (overfit to the Rasch model) strong residual correlations amongst them. This could mean that these items work well together, but likely represent another dimension than items 5-7, which in turn all showed high item fit (underfit).
+
+We'll make an analysis of this setup, including item 4 with both sets.
+
+```{r}
+d1 <- d[,1:4]
+d2 <- d.backup[,4:7]
+```
+
+## Items 1-4, worry
+
+```{r}
+d <- d1
+```
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Conditional item fit
+```{r}
+simfit1 <- RIgetfit(d, iterations = 100, cpu = 8) 
+
+RIitemfit(d, simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+simpca <- RIbootPCA(d,200, cpu = 8)
+simpca$max
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor1 <- RIgetResidCor(d, iterations = 500, cpu = 8)
+RIresidcorr(d, cutoff = simcor1$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response categories
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-8,8))
+```
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+:::
+
+Item-restscore looks good. Item infit shows slight overfit item 2. No residual correlations.
+
+### Reliability
+
+```{r}
+RItif(d, samplePSI = T)
+```
+
+TIF is low while PSI is ok at 0.82.
+
+### DIF
+
+```{r}
+d <- d.all %>% 
+  select(GAD7_1:GAD7_4,time) %>% 
+  na.omit()
+
+dif.time <- d$time
+d$time <- NULL
+RIpartgamDIF(d,dif.time)
+RIdifTable(d,dif.time)
+```
+
+### Item parameters
+
+```{r}
+RIitemparams(d1, output = "file", filename = "GAD4_itemparams.csv")
+RIscoreSE(d1)
+RIscoreSE(d1, output = "figure")
+
+```
+
+### Latent scores items 1-4
+
+```{r}
+itemps <- read_csv("GAD4_itemparams.csv") %>% 
+  as.matrix()
+
+d <- df %>% 
+  select(GAD7_1:GAD7_4,PID,time) %>% 
+  na.omit()
+
+PID <- d$PID
+dif.time <- d$time
+
+d <- d %>% 
+  select(!c(PID,time))
+
+scores <- RIestThetasCATr(d, itemps, theta_range = c(-8,8))
+hist(scores)
+summary(scores)
+
+data.frame(PID = PID,
+           time = dif.time,
+           GAD4_score = scores) %>% 
+  write_csv("GAD4_score.csv")
+
+```
+
+
+## Items 4-7, anxiety
+
+```{r}
+d <- d2
+```
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Conditional item fit
+```{r}
+simfit1 <- RIgetfit(d, iterations = 100, cpu = 8) 
+RIitemfit(d, simfit1)
+```
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+simpca <- RIbootPCA(d,200, cpu = 8)
+simpca$max
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor1 <- RIgetResidCor(d, iterations = 500, cpu = 8)
+RIresidcorr(d, cutoff = simcor1$p99)
+```
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### Response categories
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-8,8))
+```
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+:::
+
+Item 4 actually works quite well with items 5-7 too. However, it shows disordered thresholds in this item set, which it does not with items 1-3, so we will use it as a part of item set 1, "worry".
+
+Item thresholds have small distances or are disordered (2 items) in this item set, which is further indicated by the low reliability, even before merging response categories. We will not use this second set of items in any analysis.
+
+

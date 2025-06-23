@@ -1,0 +1,577 @@
+---
+title: "WPS"
+title-block-banner: "#870052"
+title-block-banner-color: "#FFFFFF"
+date: last-modified
+date-format: iso
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(easyRasch)
+library(haven)
+
+### some commands exist in multiple packages, here we define preferred ones that are frequently used
+select <- dplyr::select
+count <- dplyr::count
+recode <- car::recode
+rename <- dplyr::rename
+
+d.all <- read_spss("data/SUVRTW_LONG 240528 TOTAL.sav") 
+
+d <- d.all %>% 
+  select(starts_with("WPS"),time)
+
+# # subset and remove DIF variable(s)
+# dif.time <- d$time
+# d$time <- NULL
+
+itemlabels <- read_csv("data/spss_labels.csv") %>% 
+  filter(str_detect(itemnr,"WPS"))
+
+```
+
+## Background 
+
+We have longitudinal data from 10 measurements.
+
+We'll select the datapoint with best targeting for our psychometric analysis.
+
+```{r}
+o_plots <- d %>% 
+  #select(!PID) %>% 
+  na.omit() %>% 
+  #mutate(across(!time, ~ .x - 1)) %>% 
+  split(.$time) %>% 
+  map(~ RItargeting(.x %>% select(!time),xlim = c(-3,3)) + plot_annotation(title = paste0("Timepoint ",.x$time)))
+
+
+```
+
+```{r}
+#| layout-ncol: 2
+o_plots[[1]]
+o_plots[[2]]
+o_plots[[3]] 
+o_plots[[4]] 
+o_plots[[5]]
+o_plots[[6]] 
+o_plots[[7]]
+o_plots[[8]]
+o_plots[[9]]
+o_plots[[10]]
+```
+
+Time point 2 has best targeting.
+
+```{r}
+d %>% 
+  filter(time == 2) %>% 
+  select(!time) %>% 
+  na.omit() %>% 
+  RIpfit()
+```
+
+Person fit looks ok.
+
+
+```{r}
+d_all <- d
+d <- d %>% 
+  filter(time == 2) %>% 
+  select(!time) %>% 
+  na.omit()
+```
+
+
+### Descriptives
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+:::
+
+```{r}
+d2 <- d.all %>% 
+  select(starts_with("WPS"),time,PID) %>% 
+  na.omit()
+
+# subset and remove DIF variable(s)
+dif.time <- d2$time
+d2$time <- NULL
+
+# subset and remove ID variable
+PID <- d2$PID
+d2$PID <- NULL
+```
+
+::: panel-tabset
+#### Tile plot
+```{r}
+RItileplot(d)
+```
+#### Stacked bars
+```{r}
+RIbarstack(d)
+```
+:::
+
+
+## Rasch analysis 1
+
+The eRm package, which uses Conditional Maximum Likelihood (CML)
+estimation, will be used primarily. For this analysis, the Partial
+Credit Model will be used.
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit <- RIgetfit(d,100,8)
+RIitemfit(d,simfit,sort = "infit")
+RIgetfitPlot(simfit,d)
+```
+
+Very high item fit for several items, and quite low for others, indicating multidimensionality.
+
+Items 3, 8, and 10 show the highest item fit.
+
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,250,8)
+RIresidcorr(d, cutoff = simcor$p99)
+```
+
+Several correlated item pairs:
+
+- 7 with 4 and 6
+- 4 with 6 and 7
+- 1 with 13 and 2
+- 13 and 12
+
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+:::
+
+3, 8 and 10 cluster together in the loadings/location plot, and all show underfit (high levels of infit MSQ). Let's remove all of them.
+
+
+- WPS_3  I vissa situationer på arbetsplatsen är jag rädd att jag ska få symtom som darrningar, rodnad, svettningar eller hjärtk…
+- WPS_8  Jag har sjukanmält mig flera gånger för att det var för stora problem på min arbetsplats      
+- WPS_10 När arbetsdagen är slut har jag mer bråttom därifrån än andra               
+
+## Rasch analysis 2
+
+```{r}
+removed_items <- c("WPS_3","WPS_8","WPS_10")
+
+d.backup <- d
+
+d <- d %>% 
+  select(!any_of(removed_items))
+```
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit <- RIgetfit(d,100,8)
+RIitemfit(d,simfit,sort = "infit")
+RIgetfitPlot(simfit,d)
+```
+
+Items 11 and 5 have high item fit.
+
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+
+11 deviates the most.
+
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+RIpcmPCA(d)
+```
+
+Still above 2.
+
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,350,8)
+RIresidcorr(d, cutoff = simcor$p99)
+```
+
+- 4 with 6 and 7
+- 7 with 4 and 6
+- 12 and 13
+
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+:::
+
+We'll remove items 11 (high item fit) and 7 (residual correlations.)
+
+- WPS_7  Jag undviker helst att vara i närheten av min arbetsplats     
+- WPS_11 När jag arbetar är jag alltid vaksam på vad som kan komma att hända härnäst  
+
+## Rasch analysis 3
+
+```{r}
+removed_items <- c("WPS_3","WPS_8","WPS_10","WPS_11","WPS_7")
+
+d.backup2 <- d
+
+d <- d %>% 
+  select(!any_of(removed_items))
+```
+
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit <- RIgetfit(d,100,8)
+RIitemfit(d,simfit,sort = "infit")
+RIgetfitPlot(simfit,d)
+```
+
+5 still with very high item fit.
+
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+
+5 deviates the most.
+
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+simpca <- RIbootPCA(d, cpu = 8, iterations = 100)
+simpca$max
+RIpcmPCA(d)
+```
+
+Better but not good enough.
+
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,500,8)
+RIresidcorr(d, cutoff = simcor$p99)
+```
+
+Still 4 with 6, and 12 with 13.
+
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+:::
+
+Item 5 is removed, and 13 (worse item fit), as well as 6 (worse targeting than 4).
+
+## Rasch analysis 4
+
+```{r}
+removed_items <- c("WPS_3","WPS_8","WPS_10","WPS_11","WPS_7","WPS_5","WPS_13","WPS_6")
+
+d.backup2 <- d
+
+d <- d %>% 
+  select(!any_of(removed_items))
+```
+
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit <- RIgetfit(d,100,8)
+RIitemfit(d,simfit)
+```
+
+### Item-restscore
+```{r}
+RIrestscore(d)
+```
+
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+
+RIpcmPCA(d)
+```
+
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,500,8)
+RIresidcorr(d, cutoff = simcor$p99)
+```
+
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### DIF time
+```{r}
+d2 %>% 
+  select(all_of(names(d))) %>% 
+  as.data.frame() %>% 
+  partgam_DIF(.,dif.time)
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = T)
+```
+:::
+
+Minor underfit for item 9 according to infit MSQ, while item-restscore is ok. Also very minor overfit for item 1, also with item-restscore being ok. No residual correlations. No relevant DIF magnitude across time.
+
+```{r}
+final.items <- names(d)
+itemlabels %>% 
+  filter(itemnr %in% final.items) %>% 
+  write_csv("WPS_finalitems.csv")
+```
+
+
+## Item parameters
+
+```{r}
+RIitemparams(d, output = "file", filename = "WPS_params.csv")
+RIscoreSE(d)
+RIscoreSE(d, output = "figure")
+```
+
+## Latent score
+
+```{r}
+items <- RIitemparams(d, output = "dataframe") %>% 
+  select(!Location) %>% 
+  as.matrix()
+
+scores <- 
+  d2 %>% 
+  select(all_of(names(d))) %>% 
+  RIestThetasCATr(items, theta_range = c(-8,8))
+
+hist(scores)
+summary(scores)
+
+data.frame(PID = PID,
+           time = dif.time,
+           WPS_score = scores) %>% 
+  ggplot(aes(x = WPS_score)) +
+  geom_histogram() +
+  facet_wrap(~time)
+
+data.frame(PID = PID,
+           time = dif.time,
+           WPS_score = scores) %>% 
+  write_csv("WPS_score.csv")
+```
+
+## Rasch analysis 4 alternative
+
+Keeping item 7 instead of 4. We also tested exchanging 12 for 13, but this worked less well. However, items should be exchangeable if used separately. Previous eliminations were made due to residual correlations, likely due to response dependency when very similar items are used in the same questionnaire.
+
+```{r}
+removed_items2 <- c("WPS_3","WPS_8","WPS_10","WPS_11","WPS_4","WPS_5","WPS_13","WPS_6")
+
+d.backup2 <- d
+
+d <- d.backup2 %>% 
+  select(!any_of(removed_items2))
+```
+
+
+```{r}
+#| column: margin
+#| echo: false
+RIlistItemsMargin(d, fontsize = 13)
+```
+
+::: panel-tabset
+### Item fit
+```{r}
+simfit <- RIgetfit(d,100,8)
+RIitemfit(d,simfit)
+```
+
+### Item-restscore
+```{r}
+RIrestscore(d)
+
+d2 %>% 
+  select(!any_of(removed_items2)) %>% 
+  RIbootRestscore(cpu = 8)
+```
+
+### PCA
+```{r}
+#| tbl-cap: "PCA of Rasch model residuals"
+
+RIpcmPCA(d)
+```
+
+### Residual correlations
+```{r}
+simcor <- RIgetResidCor(d,500,8)
+RIresidcorr(d, cutoff = simcor$p99)
+```
+
+### 1st contrast loadings
+```{r}
+RIloadLoc(d)
+```
+### ICC all items
+```{r}
+mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
+  plot(type="trace", as.table = TRUE, 
+       theta_lim = c(-6,6))
+```
+
+### Targeting
+```{r}
+#| fig-height: 5
+# increase fig-height above as needed, if you have many items
+RItargeting(d)
+```
+### Item hierarchy
+```{r}
+#| fig-height: 5
+RIitemHierarchy(d)
+```
+### DIF time
+```{r}
+d2 %>% 
+  select(all_of(names(d))) %>% 
+  as.data.frame() %>% 
+  partgam_DIF(.,dif.time)
+
+d2 %>% 
+  select(all_of(names(d))) %>% 
+  RIdifTable(dif.time)
+
+d2 %>% 
+  select(all_of(names(d))) %>% 
+  RIdifFigTime(dif.time) +
+  scale_y_continuous(limits = c(-4,4))
+```
+### Reliability
+```{r}
+RItif(d, samplePSI = T)
+```
+:::
+
+
+```{r}
+final.items2 <- names(d)
+itemlabels %>% 
+  filter(itemnr %in% final.items2) %>% 
+  write_csv("WPS_finalitems2.csv")
+```
+
+
