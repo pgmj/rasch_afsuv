@@ -22,6 +22,7 @@ library(janitor)
 library(skimr)
 library(easyRasch)
 library(haven)
+library(rsample)
 
 ### some commands exist in multiple packages, here we define preferred ones that are frequently used
 select <- dplyr::select
@@ -169,7 +170,7 @@ RIbarstack(d)
 #### Missing/item
 ```{r}
 RImissing(d)
-#RImissingP(d, n = 20)
+RImissingP(d, N = 25)
 # n persons w missing
 n_complete <- d %>% 
   na.omit() %>% 
@@ -237,20 +238,25 @@ RIlistItemsMargin(d, fontsize = 13)
 ```{r}
 simfit1 <- RIgetfit(d,100,8)
 RIitemfit(d,simfit1)
+
+kf1 <- RIinfitKfold(d,k = 20, sim_iter = 100, sim_cpu = cores)
+RIinfitKfoldPlot(kf1)
 ```
 ### Item-restscore
 ```{r}
 RIrestscore(d)
+RIbootRestscore(d, samplesize = nrow(d),cpu = 8)
 ```
 ### PCA
 ```{r}
-#| tbl-cap: "PCA of Rasch model residuals"
+simpca <- RIbootPCA(d, cpu = 8,iterations = 300)
+simpca$max
 RIpcmPCA(d)
 ```
 ### Residual correlations
 ```{r}
-simcor1 <- RIgetResidCor(d, 500, 8)
-RIresidcorr(d, cutoff = simcor1$p99)
+simcor1 <- RIgetResidCor(d, 1000, 8)
+RIresidcorr(d, cutoff = simcor1$p995)
 ```
 ### 1st contrast loadings
 ```{r}
@@ -261,6 +267,8 @@ RIloadLoc(d)
 mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
   plot(type="trace", as.table = TRUE, 
        theta_lim = c(-6,6))
+
+#RIitemCats(d, items = c("q1","q3","q8","q10"))
 ```
 
 ### Targeting
@@ -319,6 +327,8 @@ RIlistItemsMargin(d, fontsize = 13)
 simfit2 <- RIgetfit(d, 100, 8)
 RIitemfit(d, simfit2)
 #RIgetfitPlot(simfit2, d)
+kf2 <- RIinfitKfold(d,k = 20, sim_iter = 100, sim_cpu = cores)
+RIinfitKfoldPlot(kf2)
 ```
 ### Item-restscore
 ```{r}
@@ -326,12 +336,13 @@ RIrestscore(d)
 ```
 ### PCA
 ```{r}
-#| tbl-cap: "PCA of Rasch model residuals"
+simpca <- RIbootPCA(d, cpu = 8,iterations = 300)
+simpca$max
 RIpcmPCA(d)
 ```
 ### Residual correlations
 ```{r}
-simcor2 <- RIgetResidCor(d, 500, 8)
+simcor2 <- RIgetResidCor(d, 1000, 8)
 RIresidcorr(d, cutoff = simcor2$p99)
 ```
 ### 1st contrast loadings
@@ -376,7 +387,7 @@ dif_plots[[1]] + dif_plots[[2]]
 Subgroups are too small for this comparison.
 :::
 
-Item 10 ("I can motivate myself to perform my job") is high in item fit (underfit). It works well in terms of item-restscore, but item fit has better properties in detecting misfit in small samples. Item 10 deviates in the loadings plot.
+Item 10 ("I can motivate myself to perform my job") is high in item infit (underfit), although item-restscore indicates no problems. It works well in terms of item-restscore, but item fit has better properties in detecting misfit in small samples. Item 10 also deviates in the loadings plot.
 
 Looking at the item wording, item 10 also deviates from other items.
 
@@ -400,6 +411,8 @@ RIlistItemsMargin(d, fontsize = 13)
 ```{r}
 simfit3 <- RIgetfit(d, 100, 8)
 RIitemfit(d, simfit3)
+kf3 <- RIinfitKfold(d,k = 20, sim_iter = 100, sim_cpu = cores)
+RIinfitKfoldPlot(kf3)
 ```
 ### Item-restscore
 ```{r}
@@ -407,7 +420,8 @@ RIrestscore(d)
 ```
 ### PCA
 ```{r}
-#| tbl-cap: "PCA of Rasch model residuals"
+simpca <- RIbootPCA(d, cpu = 8,iterations = 300)
+simpca$max
 RIpcmPCA(d)
 ```
 ### ICC all items
@@ -415,6 +429,8 @@ RIpcmPCA(d)
 mirt(d, model=1, itemtype='Rasch', verbose = FALSE) %>% 
   plot(type="trace", as.table = TRUE, 
        theta_lim = c(-6,6))
+
+RIitemCats(d)
 ```
 ### Targeting
 ```{r}
@@ -438,7 +454,7 @@ RItif(d, samplePSI = TRUE)
 ```
 :::
 
-No misfit. While we still have small distances between item threshold locations t2 and t3, none are disordered.
+No misfit. While we still have small distances between item threshold locations t2 and t3 for items 1, 4, and 8, none are disordered.
 
 
 
